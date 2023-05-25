@@ -1,0 +1,52 @@
+import requests
+import sqlite3
+from cachetools import TTLCache
+
+# Replace with your actual API key
+api_key = 'your_api_key_here'
+
+# URL for TMDB API
+url = f'https://api.themoviedb.org/3/movie/popular?api_key={api_key}'
+
+# Set up a cache with a TTL (time to live) of one day
+cache = TTLCache(maxsize=100, ttl=86400)
+
+# Set up a SQLite database
+conn = sqlite3.connect('movies.db')
+c = conn.cursor()
+
+# Create table
+c.execute('''CREATE TABLE IF NOT EXISTS movies
+             (id INTEGER PRIMARY KEY, title TEXT, poster_path TEXT, last_update TEXT)''')
+
+# Fetch data from the TMDB API
+response = requests.get(url)
+
+# If the request was successful (status code 200), store the data
+if response.status_code == 200:
+    data = response.json()
+    for movie in data['results']:
+        # Insert or replace movie data in the database
+        c.execute('''INSERT OR REPLACE INTO movies
+                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
+                  (movie['id'], movie['title'], movie['poster_path']))
+    # Commit the changes
+    conn.commit()
+else:
+    print(f'Request failed with status code {response.status_code}')
+
+# Function to get a movie by ID, with caching
+def get_movie(id):
+    if id in cache:
+        # If the movie is in the cache, get it from there
+        return cache[id]
+    else:
+        # Otherwise, get it from the database and store it in the cache
+        c.execute('SELECT * FROM movies WHERE id=?', (id,))
+        movie = c.fetchone()
+        if movie is not None:
+            cache[id] = movie
+        return movie
+
+# Example usage
+print(get_movie(123))
